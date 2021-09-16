@@ -1,14 +1,14 @@
-use macroquad::{prelude::*, rand::gen_range};
+use macroquad::prelude::*;
+use macroquad::prelude::scene::Node;
+use macroquad::rand::ChooseRandom;
 
-const CELL_SIZE: f32 = 64.;
+const CELL_SIZE: f32 = 5.;
 const CELL_SIZE_Y: f32 = CELL_SIZE * 1.7321 * 0.5;
 
 const OFFSETS: [[[isize; 2]; 6]; 2] = [
     [[1, 0], [0, -1], [-1, -1], [-1, 0], [-1, 1], [0, 1]],
-    [[0, 0], [1, -1], [0, -1], [-1, 0], [0, 1], [1, 1]],
+    [[1, 0], [1, -1], [0, -1], [-1, 0], [0, 1], [1, 1]],
 ];
-
-type CollisionRule = [f32; 64];
 
 #[inline]
 fn get_cell(i: usize, node: u8) -> bool {
@@ -20,85 +20,122 @@ fn set_cell(i: usize, node: &mut u8, val: bool) {
     *node = (!(0b1 << i) & *node) | (val as u8) << i;
 }
 
-fn generate_vectors<const N: usize>() -> [[f32; 2]; N] {
-    let mut a = [[0.; 2]; N];
-
-    a.iter_mut().enumerate().for_each(|(i, v)| {
-        let alpha = i as f32 / N as f32 * 2. * std::f32::consts::PI;
-        *v = [alpha.cos(), alpha.sin()];
-    });
-
-    a
+fn init_lattice<T: Clone>(w: usize, h: usize, t: T) -> Vec<Vec<T>> {
+    vec![vec![t; w];h]
 }
 
-fn draw_node(node: &u8, x: f32, y: f32) {
-    let vecs = generate_vectors::<6>();
-
-    for i in 0..6 {
-        draw_circle(
-            0.2 * vecs[i][0] * CELL_SIZE + x,
-            0.2 * vecs[i][1] * CELL_SIZE + y,
-            0.1 * CELL_SIZE,
-            if get_cell(i, *node) { WHITE } else { DARKGRAY },
-        );
-    }
+#[derive(Clone, Copy, Debug)]
+enum NodeType {
+    Fluid,
+    Boundary,
+    Inflow(u8),
 }
 
-fn init_grid(w: usize, h: usize) -> Vec<Vec<u8>> {
-    let mut v = vec![];
-
-    for i in 0..h {
-        v.push(vec![0; w])
-    }
-
-    v
-}
-
-#[macroquad::main("2D Lattice-Gas Automaton")]
+#[macroquad::main("2D FHP Lattice-Gas Automaton")]
 async fn main() {
     let height = (screen_height() / CELL_SIZE_Y) as usize - 2;
     let width = height;
 
-    let mut lattice: Vec<Vec<u8>> = init_grid(width, height);
+    let mut lattice= init_lattice(width, height, 0u8);
 
-    for j in height / 4..height * 3 / 4 {
-        for i in width / 4..width * 3 / 4 {
-            lattice[j][i] = rand::gen_range(0, 63);
-        }
+    let mut type_lattice = init_lattice(width, height, NodeType::Fluid);
+
+    for j in 0..height {
+        type_lattice[j][width/8] = NodeType::Boundary;
+        type_lattice[j][width * 7 / 8] = NodeType::Boundary;
     }
+
+    for j in height*7/16..height*9/16 {
+        type_lattice[j][0] = NodeType::Inflow(0b000001);
+        type_lattice[j][width / 8] = NodeType::Fluid;
+    }
+
+    for i in width/8..=width * 7 / 8 { 
+        type_lattice[0][i] = NodeType::Boundary;
+        type_lattice[height-1][i] = NodeType::Boundary;
+    }
+
+    let x_off = screen_width() / 2. - (width - 1) as f32 * CELL_SIZE / 2.;
+    let y_off = screen_height() / 2. - (height - 1) as f32 * CELL_SIZE_Y / 2.;
 
     let mut time = get_time();
 
     loop {
+
         let x_off = screen_width() / 2. - (width - 1) as f32 * CELL_SIZE / 2.;
         let y_off = screen_height() / 2. - (height - 1) as f32 * CELL_SIZE_Y / 2.;
 
         for j in 0..height {
-            for i in 0..lattice[j].len() {
-                draw_node(
-                    &lattice[j][i],
-                    x_off + i as f32 * CELL_SIZE + if j % 2 == 0 { 0. } else { 0.5 * CELL_SIZE },
-                    y_off + j as f32 * CELL_SIZE_Y,
-                );
+            for i in 0..width {
+                let x = x_off + i as f32 * CELL_SIZE + if j % 2 == 0 { 0. } else { 0.5 * CELL_SIZE };
+                let y = y_off + j as f32 * CELL_SIZE_Y;
+
+                match type_lattice[j][i] {
+                    NodeType::Fluid | NodeType::Inflow(_)=> {
+                        let n = ((lattice[j][i].count_ones() as f32 / 6.) * 255.) as u8;
+
+                        draw_circle(x, y, CELL_SIZE_Y / 2., Color::from_rgba(n, n, n, 255))
+                    },
+                    NodeType::Boundary => {
+                        draw_circle(x, y, CELL_SIZE_Y / 2., Color::from_rgba(255, 128, 128, 255))
+                    },
+                }
+
+             
             }
         }
 
-        if get_time() - time >= 1. {
+        if get_time() - time >= 0.005 {
             time = get_time();
 
-            let mut new_lattice = lattice.clone();
+            let a = *vec![0b010010,0b001001].choose().unwrap();
+            let b = *vec![0b100100,0b001001].choose().unwrap();
+            let c = *vec![0b010010,0b100100].choose().unwrap();
+
+            // collision
+
 
             for j in 0..height {
-                for i in 0..lattice[j].len() {
-                    for d in 0..6 {
+                for i in 0..width {
+
+                    match type_lattice[j][i] {
+                        NodeType::Fluid => {
+                            lattice[j][i] = match lattice[j][i] {
+                                0b010101 => 0b101010,
+                                0b101010 => 0b010101,
+                                0b100100 => a,
+                                0b010010 => b,
+                                0b001001 => c,
+        
+                                _ => lattice[j][i],
+                            }
+                        },
+                        NodeType::Inflow(d) => {
+                            lattice[j][i] = (lattice[j][i] >> 3) & 0b111 | (lattice[j][i] << 3 & 0b111000);
+                            lattice[j][i] |= d;
+                        }
+                        NodeType::Boundary   => {
+                            lattice[j][i] = (lattice[j][i] >> 3) & 0b111 | (lattice[j][i] << 3 & 0b111000)
+                        },
+                    }
+
+               
+                }
+            }
+
+            let mut new_lattice = init_lattice(width, height, 0);
+            
+
+            // streaming
+            for j in 0..height {
+                for i in 0..width {
+                    for d in 0..6 {                   
                         let [i_off, j_off] = OFFSETS[j % 2][d];
 
                         let nj =
                             ((j as isize - j_off + height as isize) % height as isize) as usize;
 
-                        let w = lattice[nj].len();
-
-                        let ni = ((i as isize + i_off + w as isize) % w as isize) as usize;
+                        let ni = ((i as isize + i_off + width as isize) % width as isize) as usize;
 
                         set_cell(d, &mut new_lattice[nj][ni], get_cell(d, lattice[j][i]));
                     }

@@ -74,7 +74,7 @@ fn update_lattice(lattice: &mut Vec<Vec<Node>>, height: usize, width: usize) {
     *lattice = new_lattice;
 } 
 
-#[macroquad::main("2D Lattice-Gas Automaton")]
+#[macroquad::main("2D HPP Lattice-Gas Automaton")]
 async fn main() {
     let height = (screen_height() / CELL_SIZE) as usize - 2;
     let width = height;
