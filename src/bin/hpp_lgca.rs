@@ -7,6 +7,7 @@ const CELL_SIZE: f32 = 8.;
 const PERIODIC: bool = false;
 
 
+
 fn draw_node(node: &Node, x: f32, y: f32) {
     if node[0] {
         draw_circle(x + CELL_SIZE / 4., y, CELL_SIZE / 8., GREEN);
